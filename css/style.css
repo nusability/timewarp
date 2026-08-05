@@ -14,9 +14,18 @@ html, body {
   margin: 0;
   height: 100%;
   overflow: hidden;
+  overscroll-behavior: none;
   background: var(--bg);
   color: var(--text);
   font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Pin the document — iOS Safari otherwise lets the page pan a few pixels
+   sideways despite overflow:hidden. Every UI layer is fixed-position. */
+body {
+  position: fixed;
+  inset: 0;
+  width: 100%;
 }
 
 #scene {
@@ -271,9 +280,14 @@ html, body {
   padding: 20px 22px;
   overflow-y: auto;
   transform: translateX(105%);
+  visibility: hidden;
+  transition: transform 0.25s ease, visibility 0s 0.25s;
+}
+#drawer.open {
+  transform: translateX(0);
+  visibility: visible;
   transition: transform 0.25s ease;
 }
-#drawer.open { transform: translateX(0); }
 
 #dHandle { display: none; }
 
