@@ -244,6 +244,20 @@ export class SpiralView {
     }));
   }
 
+  // A thin arc line along the band at offset u — the subtle form of a range.
+  makeArc(ta, tb, u, color, opacity, lift) {
+    ta = this.clampT(ta); tb = this.clampT(tb);
+    if (!(tb > ta)) tb = Math.min(this.domain.t1, ta + (this.domain.t1 - this.domain.t0) * 0.002);
+    const span = (tb - ta) / (this.domain.t1 - this.domain.t0);
+    const steps = Math.max(6, Math.ceil(span * this.turns * 110));
+    const pts = [];
+    for (let i = 0; i <= steps; i++) {
+      pts.push(this.P(ta + (i / steps) * (tb - ta), u, lift));
+    }
+    const g = new THREE.BufferGeometry().setFromPoints(pts);
+    return new THREE.Line(g, new THREE.LineBasicMaterial({ color, transparent: true, opacity }));
+  }
+
   // topics: [{ id, title, color, laneIndex, laneCount, selfEvent, events }]
   // Each event: { qid, title, cat, kind, ta, tb, tp, open, tier, thumb, whenText }
   setTopics(topics) {
@@ -256,42 +270,48 @@ export class SpiralView {
       const uc = -this.bandW / 2 + laneW * (topic.laneIndex + 0.5);
       const color = new THREE.Color(topic.color);
 
-      // The topic's own span, highlighted boldly across its lane.
+      // The topic's own span is the ONLY bold ribbon — "the war years in
+      // pink". Every other range renders as a thin thread so long-lived
+      // linked entities can't flood the spiral with color.
       const se = topic.selfEvent;
       if (se && se.ta != null && this.inDomain(se.ta, se.open ? this.domain.t1 : (se.tb ?? se.ta))) {
         const tb = se.open ? this.domain.t1 : (se.tb ?? se.ta);
-        this.dataG.add(this.makeStrip(se.ta, tb, uc - laneW * 0.40, uc + laneW * 0.40, color, 0.42, 0.12));
+        this.dataG.add(this.makeStrip(se.ta, tb, uc - laneW * 0.40, uc + laneW * 0.40, color, 0.5, 0.12));
       }
 
       for (const ev of topic.events) {
         const tMark = ev.kind === 'point' ? ev.tp : ev.ta ?? ev.tb;
-        if (ev.kind !== 'point' && ev.ta != null) {
+        const jitter = (hash01(ev.qid) - 0.5) * laneW * 0.5;
+        if (!ev.isSelf && ev.kind !== 'point' && ev.ta != null) {
           const tb = ev.open ? this.domain.t1 : (ev.tb ?? ev.ta);
           if (this.inDomain(ev.ta, tb)) {
-            this.dataG.add(this.makeStrip(
-              ev.ta, tb, uc - laneW * 0.16, uc + laneW * 0.16,
-              color, ev.open ? 0.09 : 0.24, 0.2 + topic.laneIndex * 0.03,
+            this.dataG.add(this.makeArc(
+              ev.ta, tb, uc + jitter,
+              color, ev.open ? 0.15 : 0.45, 0.2 + topic.laneIndex * 0.03,
             ));
           }
         }
         if (tMark == null || !this.inDomain(tMark)) continue;
 
         const marker = this.makeMarker(ev, topic);
-        const jitter = (hash01(ev.qid) - 0.5) * laneW * 0.5;
         marker.position.copy(this.P(tMark, uc + jitter, 1.1));
         marker.userData = { ev, topic };
         this.dataG.add(marker);
         this.pickables.push(marker);
 
-        if (ev.tier <= 1 || ev.isSelf) {
-          const label = this.makeTextSprite(ev.title, {
-            font: ev.isSelf ? '700 34px system-ui, sans-serif' : '500 26px system-ui, sans-serif',
-            color: '#e9eefb', pill: true, border: ev.isSelf ? topic.color : null,
-            height: ev.isSelf ? 3.4 : 2.5, maxChars: 34,
-          });
-          label.position.copy(marker.position).y += (ev.tier === 0 ? 5.6 : 2.6);
-          this.dataG.add(label);
-        }
+        // Every event carries its title — minor ones in smaller type.
+        const minor = ev.tier === 2;
+        const label = this.makeTextSprite(ev.title, {
+          font: ev.isSelf ? '700 34px system-ui, sans-serif'
+            : minor ? '500 22px system-ui, sans-serif' : '500 26px system-ui, sans-serif',
+          color: minor ? '#c3cfe6' : '#e9eefb', pill: true,
+          border: ev.isSelf ? topic.color : null,
+          height: ev.isSelf ? 3.4 : minor ? 1.8 : 2.5,
+          maxChars: minor ? 24 : 34,
+        });
+        label.position.copy(marker.position);
+        label.position.y += ev.isSelf ? 6 : ev.tier === 0 ? 4.6 : 2.1;
+        this.dataG.add(label);
       }
     }
   }
@@ -385,7 +405,7 @@ export class SpiralView {
       if (dx * dx + dy * dy > 36) return; // it was a drag, not a click
     }
     const obj = this.raycastEvent(e);
-    if (obj) this.onPick(obj.userData.ev, obj.userData.topic);
+    this.onPick(obj ? obj.userData.ev : null, obj ? obj.userData.topic : null);
   }
 
   setHover(obj, e) {

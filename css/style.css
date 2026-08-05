@@ -275,6 +275,8 @@ html, body {
 }
 #drawer.open { transform: translateX(0); }
 
+#dHandle { display: none; }
+
 #dClose {
   position: absolute;
   top: 12px; right: 14px;
@@ -367,4 +369,29 @@ html, body {
   #empty p { font-size: 0.85rem; line-height: 1.45; }
   #periodBadge { bottom: 34px; font-size: 0.72rem; padding: 5px 10px; }
   #hint { font-size: 0.66rem; }
+
+  /* On phones the detail view is a bottom sheet, not a side panel — the
+     side panel's close button vanished under the notch. */
+  #drawer {
+    top: auto;
+    left: 0; right: 0; bottom: 0;
+    width: 100%;
+    max-height: 74vh;
+    border-left: none;
+    border-top: 1px solid var(--panel-border);
+    border-radius: 18px 18px 0 0;
+    transform: translateY(105%);
+    padding: 10px 20px calc(18px + env(safe-area-inset-bottom));
+  }
+  #drawer.open { transform: translateY(0); }
+  #dHandle {
+    display: block;
+    width: 44px;
+    height: 5px;
+    margin: 2px auto 12px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.28);
+  }
+  #dClose { top: 16px; }
+  #dImg { max-height: 150px; }
 }

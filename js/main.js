@@ -20,7 +20,7 @@ const state = {
 const $ = (sel) => document.querySelector(sel);
 
 const spiral = new SpiralView($('#scene'), {
-  onPick: (ev, topic) => openDrawer(ev, topic),
+  onPick: (ev, topic) => (ev ? openDrawer(ev, topic) : closeDrawer()),
   onHover: (ev, topic, x, y) => showTooltip(ev, topic, x, y),
 });
 
@@ -68,10 +68,15 @@ function eventMid(ev) {
 }
 
 // Filter by category, rank by notability, cap by density, assign tiers.
+// Happenings (conflicts, one-time events, disasters) get a ranking boost so
+// Pearl Harbor outranks the ever-present countries and heads of state.
+const BOOSTED = new Set(['conflict', 'event', 'disaster']);
+const score = (ev) => ev.sitelinks * (BOOSTED.has(ev.cat) ? 1.8 : 1);
+
 function visibleEvents(topic) {
   const list = topic.events
     .filter((ev) => !ev.isSelf && state.enabledCats.has(ev.cat))
-    .sort((a, b) => b.sitelinks - a.sitelinks)
+    .sort((a, b) => score(b) - score(a))
     .slice(0, state.density);
   if (topic.selfEvent) list.unshift(topic.selfEvent);
   list.forEach((ev, i) => {
@@ -316,6 +321,7 @@ async function openDrawer(ev, topic) {
 
 function closeDrawer() { $('#drawer').classList.remove('open'); }
 $('#dClose').addEventListener('click', closeDrawer);
+$('#dHandle').addEventListener('click', closeDrawer);
 
 // ---------------------------------------------------------------- tooltip
 
