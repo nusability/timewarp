@@ -337,6 +337,10 @@ export class SpiralView {
         });
         label.position.copy(marker.position);
         label.position.y += ev.isSelf ? 6 : ev.tier === 0 ? 4.6 : 2.1;
+        // Labels are pickable too — a marker can be occluded by a nearer
+        // coil while its always-on-top label remains visible.
+        label.userData = { ev, topic };
+        this.pickables.push(label);
         this.dataG.add(label);
       }
     }
@@ -344,12 +348,14 @@ export class SpiralView {
 
   makeMarker(ev, topic) {
     const size = ev.isSelf ? 7.5 : ev.tier === 0 ? 5.5 : ev.tier === 1 ? 2.4 : 1.8;
+    // depthWrite must stay off: a sprite quad writing depth culls whatever
+    // transparent geometry draws behind it, leaving a dark square.
     const mat = new THREE.SpriteMaterial({
-      map: this.dotTexture(topic.color), depthTest: true, transparent: true,
+      map: this.dotTexture(topic.color), depthTest: true, depthWrite: false, transparent: true,
     });
     const s = new THREE.Sprite(mat);
+    s.renderOrder = 5;
     s.scale.set(size, size, 1);
-    s.userData.baseScale = size;
     // Top-tier events get their Wikipedia thumbnail as the marker face.
     if ((ev.tier === 0 || ev.isSelf) && ev.thumb) {
       makeThumbTexture(ev.thumb, topic.color).then((tex) => {
@@ -435,15 +441,14 @@ export class SpiralView {
   }
 
   setHover(obj, e) {
-    if (this.hovered && this.hovered !== obj) {
-      const b = this.hovered.userData.baseScale;
-      this.hovered.scale.set(b, b, 1);
+    if (this.hovered && this.hovered !== obj && this.hovered.userData.origScale) {
+      this.hovered.scale.copy(this.hovered.userData.origScale);
     }
     this.hovered = obj;
     this.canvas.style.cursor = obj ? 'pointer' : 'grab';
     if (obj) {
-      const b = obj.userData.baseScale * 1.35;
-      obj.scale.set(b, b, 1);
+      if (!obj.userData.origScale) obj.userData.origScale = obj.scale.clone();
+      obj.scale.copy(obj.userData.origScale).multiplyScalar(1.25);
       this.onHover(obj.userData.ev, obj.userData.topic, e.clientX, e.clientY);
     } else {
       this.onHover(null);
