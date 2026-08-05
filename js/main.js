@@ -83,28 +83,42 @@ function visibleEvents(topic) {
 // ---------------------------------------------------------------- domain
 
 function fitDomain() {
-  const times = [];
-  const mustInclude = [];
+  // Anchor the range to each topic's own timeframe plus ~50% context on each
+  // side — NOT to the linked events, whose most notable entries are exactly
+  // the long-lived giants (countries, religions, empires) that would stretch
+  // the view across millennia. WW2 should give you the war years plus a few
+  // around them, not 1000 BCE – 3000 CE.
+  const ranges = [];
+  const fallbackTimes = [];
   for (const topic of state.topics) {
-    for (const ev of visibleEvents(topic)) {
-      if (ev.kind === 'point') times.push(ev.tp);
-      else { times.push(ev.ta); times.push(ev.open ? NOW : ev.tb); }
-    }
     const se = topic.selfEvent;
-    if (se) {
-      if (se.kind === 'point') mustInclude.push(se.tp);
-      else { mustInclude.push(se.ta, se.open ? NOW : se.tb); }
+    if (se && se.kind === 'point') {
+      ranges.push([se.tp - 15, se.tp + 15]);
+    } else if (se && se.ta != null) {
+      const b = se.open ? NOW : (se.tb ?? se.ta);
+      const span = Math.max(1, b - se.ta);
+      const pad = Math.min(50, Math.max(3, span * 0.5));
+      ranges.push([se.ta - pad, b + pad]);
+    } else {
+      // No own timeframe (e.g. a concept article): fall back to the
+      // percentile spread of its dated surroundings.
+      for (const ev of visibleEvents(topic)) {
+        if (ev.kind === 'point') fallbackTimes.push(ev.tp);
+        else { fallbackTimes.push(ev.ta); fallbackTimes.push(ev.open ? NOW : ev.tb); }
+      }
     }
   }
-  if (!times.length && !mustInclude.length) return;
-  // Percentile clamp so long-lived linked places ("Paris, since 52 BCE")
-  // don't stretch the domain across millennia.
-  times.sort((a, b) => a - b);
-  let lo = times.length ? times[Math.floor(times.length * 0.08)] : Infinity;
-  let hi = times.length ? times[Math.ceil(times.length * 0.92) - 1] : -Infinity;
-  for (const t of mustInclude) { lo = Math.min(lo, t); hi = Math.max(hi, t); }
-  const pad = Math.max(1, (hi - lo) * 0.05);
-  setDomain(Math.floor(lo - pad), Math.ceil(hi + pad));
+  if (fallbackTimes.length) {
+    fallbackTimes.sort((a, b) => a - b);
+    ranges.push([
+      fallbackTimes[Math.floor(fallbackTimes.length * 0.08)],
+      fallbackTimes[Math.ceil(fallbackTimes.length * 0.92) - 1],
+    ]);
+  }
+  if (!ranges.length) return;
+  const lo = Math.min(...ranges.map((r) => r[0]));
+  const hi = Math.max(...ranges.map((r) => r[1]));
+  setDomain(Math.floor(lo), Math.ceil(hi));
 }
 
 function setDomain(t0, t1) {

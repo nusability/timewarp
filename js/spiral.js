@@ -23,7 +23,7 @@ export class SpiralView {
     this.Rg = 26;      // radius growth over the full domain (slightly conical)
     this.H = 110;      // total height
     this.bandW = 16;   // band width
-    this.maxTurns = 18;
+    this.maxTurns = 24;
 
     this.domain = { t0: 1900, t1: 2000 };
     this.pickables = [];
@@ -110,8 +110,9 @@ export class SpiralView {
   resetCamera() {
     const r = this.R0 + this.Rg + this.bandW;
     // Camera along angle 0, so the period boundary ("top" of each turn)
-    // faces the viewer.
-    this.camera.position.set(r * 2.1, this.H * 0.95, r * 0.55);
+    // faces the viewer. Side-on enough that tall spirals read as a tower
+    // rather than looking down the funnel.
+    this.camera.position.set(r * 2.5, this.H * 0.55, r * 0.7);
     this.controls.target.set(0, 0, 0);
     this.controls.update();
   }
@@ -256,7 +257,7 @@ export class SpiralView {
       const se = topic.selfEvent;
       if (se && se.ta != null && this.inDomain(se.ta, se.open ? this.domain.t1 : (se.tb ?? se.ta))) {
         const tb = se.open ? this.domain.t1 : (se.tb ?? se.ta);
-        this.dataG.add(this.makeStrip(se.ta, tb, uc - laneW * 0.40, uc + laneW * 0.40, color, 0.55, 0.12));
+        this.dataG.add(this.makeStrip(se.ta, tb, uc - laneW * 0.40, uc + laneW * 0.40, color, 0.42, 0.12));
       }
 
       for (const ev of topic.events) {
@@ -266,7 +267,7 @@ export class SpiralView {
           if (this.inDomain(ev.ta, tb)) {
             this.dataG.add(this.makeStrip(
               ev.ta, tb, uc - laneW * 0.16, uc + laneW * 0.16,
-              color, ev.open ? 0.09 : 0.3, 0.2 + topic.laneIndex * 0.03,
+              color, ev.open ? 0.09 : 0.24, 0.2 + topic.laneIndex * 0.03,
             ));
           }
         }
@@ -293,7 +294,7 @@ export class SpiralView {
   }
 
   makeMarker(ev, topic) {
-    const size = ev.isSelf ? 8.5 : ev.tier === 0 ? 6.5 : ev.tier === 1 ? 2.6 : 1.9;
+    const size = ev.isSelf ? 7.5 : ev.tier === 0 ? 5.5 : ev.tier === 1 ? 2.4 : 1.8;
     const mat = new THREE.SpriteMaterial({
       map: this.dotTexture(topic.color), depthTest: true, transparent: true,
     });
