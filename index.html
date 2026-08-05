@@ -14,6 +14,7 @@
 <body>
   <canvas id="scene"></canvas>
 
+  <div id="uibar">
   <header id="topbar">
     <div class="brand">🌀 <span>Timewarp</span><span id="mockBadge" style="display:none">sample&nbsp;data</span></div>
     <div class="searchwrap">
@@ -39,12 +40,15 @@
   <div id="chipsbar">
     <div id="topics"></div>
     <div class="sep"></div>
+    <button id="filtersToggle" class="chip">Filters</button>
     <div id="filters"></div>
+  </div>
   </div>
 
   <div id="status" style="display:none"><span class="spinner"></span><span id="statusText"></span></div>
 
   <div id="empty">
+    <button id="emptyClose" title="Close">×</button>
     <h1>A spiral through history</h1>
     <p>Search for any Wikipedia article. Timewarp reads it — and everything it links to —
        through Wikidata’s structured dates, then lays the topic’s history out on the spiral.

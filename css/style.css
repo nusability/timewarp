@@ -30,15 +30,20 @@ html, body {
 
 /* ---------- top bar ---------- */
 
-#topbar {
+#uibar {
   position: fixed;
   top: 0; left: 0; right: 0;
+  z-index: 20;
+  background: linear-gradient(rgba(11, 14, 20, 0.92), rgba(11, 14, 20, 0.75) 80%, transparent);
+  pointer-events: none;
+}
+#uibar > * { pointer-events: auto; }
+
+#topbar {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 10px 16px;
-  background: linear-gradient(rgba(11, 14, 20, 0.92), rgba(11, 14, 20, 0.75) 75%, transparent);
-  z-index: 20;
+  padding: 10px 16px 4px;
   flex-wrap: wrap;
 }
 
@@ -128,14 +133,10 @@ html, body {
 /* ---------- chips ---------- */
 
 #chipsbar {
-  position: fixed;
-  top: 58px;
-  left: 0; right: 0;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 16px;
-  z-index: 19;
+  padding: 4px 16px 10px;
   flex-wrap: wrap;
   pointer-events: none;
 }
@@ -161,6 +162,11 @@ html, body {
 .topic-chip .x:hover { color: #ff5d73; }
 .filter-chip.off { opacity: 0.38; }
 .filter-chip:hover { border-color: var(--accent); }
+
+/* Progressive disclosure: on desktop all filters are visible and the toggle
+   is hidden; on small screens the toggle expands/collapses them. */
+#filtersToggle { display: none; pointer-events: auto; }
+#filtersToggle.on { border-color: var(--accent); color: var(--accent); }
 
 /* ---------- status / empty / toast ---------- */
 
@@ -203,6 +209,19 @@ html, body {
   backdrop-filter: blur(8px);
   z-index: 15;
 }
+#emptyClose {
+  position: absolute;
+  top: 10px; right: 12px;
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+}
+#emptyClose:hover { color: var(--text); border-color: var(--accent); }
 #empty h1 { margin: 0 0 12px; font-size: 1.5rem; }
 #empty p { color: var(--muted); line-height: 1.55; margin: 0 0 10px; }
 #empty .hints { font-size: 0.85rem; color: var(--accent); }
@@ -337,5 +356,15 @@ html, body {
 
 @media (max-width: 760px) {
   .controls label:not(:first-child), #domApply { display: none; }
-  #chipsbar { top: 96px; }
+  #filtersToggle { display: inline-flex; }
+  #filters { display: none; }
+  #filters.open { display: flex; }
+  #empty {
+    max-width: 88vw;
+    padding: 20px 18px 18px;
+  }
+  #empty h1 { font-size: 1.15rem; padding-right: 24px; }
+  #empty p { font-size: 0.85rem; line-height: 1.45; }
+  #periodBadge { bottom: 34px; font-size: 0.72rem; padding: 5px 10px; }
+  #hint { font-size: 0.66rem; }
 }

@@ -128,7 +128,12 @@ function refresh(refit = false) {
     events: visibleEvents(topic),
   })));
   renderTopicChips();
-  $('#empty').style.display = state.topics.length || state.loading ? 'none' : '';
+  $('#empty').style.display = state.topics.length || state.loading || state.emptyDismissed ? 'none' : '';
+}
+
+function dismissEmpty() {
+  state.emptyDismissed = true;
+  $('#empty').style.display = 'none';
 }
 
 // ---------------------------------------------------------------- topics
@@ -196,7 +201,12 @@ function renderTopicChips() {
   }
 }
 
+function updateFiltersToggle() {
+  $('#filtersToggle').textContent = `Filters · ${state.enabledCats.size}`;
+}
+
 function renderFilterChips() {
+  updateFiltersToggle();
   const box = $('#filters');
   box.innerHTML = '';
   for (const [key, def] of Object.entries(CATEGORIES)) {
@@ -210,6 +220,7 @@ function renderFilterChips() {
       if (state.enabledCats.has(key)) state.enabledCats.delete(key);
       else state.enabledCats.add(key);
       chip.classList.toggle('off', !state.enabledCats.has(key));
+      updateFiltersToggle();
       refresh(false);
     });
     box.appendChild(chip);
@@ -323,6 +334,19 @@ function toast(msg, isError = true) {
   el.style.display = '';
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { el.style.display = 'none'; }, 5000);
+}
+
+$('#emptyClose').addEventListener('click', dismissEmpty);
+searchInput.addEventListener('focus', dismissEmpty);
+$('#scene').addEventListener('pointerdown', dismissEmpty, { once: true });
+$('#filtersToggle').addEventListener('click', () => {
+  $('#filters').classList.toggle('open');
+  $('#filtersToggle').classList.toggle('on', $('#filters').classList.contains('open'));
+});
+
+// Touch devices get touch wording in the hint bar.
+if (navigator.maxTouchPoints > 0) {
+  $('#hint').firstChild.textContent = 'Drag to orbit · Pinch to zoom · Two-finger drag to pan · Data: ';
 }
 
 $('#density').addEventListener('change', (e) => {
