@@ -22,7 +22,27 @@ export function parseWDTime(str) {
 
 export function formatYear(y) {
   const yr = Math.round(y);
-  return yr < 0 ? `${-yr} BCE` : `${yr}`;
+  const a = Math.abs(yr);
+  // Compact deep-time labels: 65 million years, 4.5 billion years, …
+  if (a >= 1e9) return `${trim(a / 1e9)}b yrs${yr < 0 ? ' ago' : ''}`;
+  if (a >= 1e6) return `${trim(a / 1e6)}m yrs${yr < 0 ? ' ago' : ''}`;
+  if (a >= 1e5) return `${trim(a / 1e3)}k yrs${yr < 0 ? ' ago' : ''}`;
+  return yr < 0 ? `${a} BCE` : `${yr}`;
+}
+
+function trim(n) {
+  return `${Math.round(n * 10) / 10}`;
+}
+
+// Human name for a period length (years per spiral turn).
+export function periodName(p) {
+  if (p === 1) return '1 year';
+  if (p === 10) return '1 decade';
+  if (p === 100) return '1 century';
+  if (p === 1000) return '1 millennium';
+  if (p >= 1e9) return `${trim(p / 1e9)} billion years`;
+  if (p >= 1e6) return `${trim(p / 1e6)} million years`;
+  return `${p.toLocaleString('en-US')} years`;
 }
 
 // Wikidata truthy statements don't carry precision, so infer a sensible

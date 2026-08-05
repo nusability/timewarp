@@ -4,7 +4,7 @@
 import { SpiralView } from './spiral.js';
 import { searchTitles, loadTopic, fetchSummary, MOCK } from './wiki.js';
 import { CATEGORIES, categorize } from './categories.js';
-import { parseWDTime, formatDate, formatYear, currentYear } from './time.js';
+import { parseWDTime, formatDate, periodName, currentYear } from './time.js';
 
 const PALETTE = ['#ff5d73', '#ffc247', '#3ec97e', '#4d9dff', '#c77dff', '#ff9752'];
 const MAX_TOPICS = 6;
@@ -109,8 +109,10 @@ function fitDomain() {
 
 function setDomain(t0, t1) {
   spiral.setDomain(t0, t1);
-  $('#domFrom').value = Math.round(t0);
-  $('#domTo').value = Math.round(t1);
+  // The spiral snaps the domain to period boundaries — reflect that in the UI.
+  $('#domFrom').value = Math.round(spiral.domain.t0);
+  $('#domTo').value = Math.round(spiral.domain.t1);
+  $('#periodBadge').textContent = `1 turn = ${periodName(spiral.period)}`;
   refresh(false);
 }
 
@@ -157,7 +159,7 @@ async function addTopic(title) {
       id: raw.qid, title: raw.title, qid: raw.qid, thumb: raw.thumb, color, selfEvent, events,
     });
     refresh(true);
-    if (selfEvent) spiral.focusTime(eventMid(selfEvent));
+    spiral.resetCamera();
     status(null);
     toast(`Added “${raw.title}” — ${events.length} dated items found.`, false);
   } catch (e) {
@@ -338,8 +340,8 @@ $('#resetView').addEventListener('click', () => spiral.resetCamera());
 // ---------------------------------------------------------------- boot
 
 renderFilterChips();
-spiral.setDomain(1700, 2030);
-refresh(false);
+setDomain(1900, 2030);
+spiral.resetCamera();
 if (MOCK) {
   $('#mockBadge').style.display = '';
   const hint = $('#empty .hints');

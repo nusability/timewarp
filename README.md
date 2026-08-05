@@ -15,6 +15,10 @@ article summary.
 
 - **3D spiral band** — zoomable, rollable, viewable from any angle (drag to
   orbit, scroll to zoom, right-drag to pan)
+- **Calendar-aligned turns** — each full turn spans exactly one period (year,
+  decade, century, millennium, … up to billions of years), auto-chosen from
+  the visible range, so period boundaries always sit at the same angle; a
+  badge shows the current scale (e.g. "1 turn = 1 decade")
 - **Works for (mostly) everything** — no hardcoded topics; dates come from
   Wikidata claims: start/end, point in time, birth/death, inception/dissolution
 - **Event-type filters** — People, Wars & conflicts, Events, Disasters,

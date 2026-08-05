@@ -306,6 +306,21 @@ html, body {
 }
 .actions button:hover, .actions a:hover { border-color: var(--accent); }
 
+/* ---------- period badge ---------- */
+
+#periodBadge {
+  position: fixed;
+  bottom: 40px;
+  left: 16px;
+  padding: 7px 14px;
+  border-radius: 99px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  color: var(--muted);
+  font-size: 0.8rem;
+  z-index: 12;
+}
+
 /* ---------- footer ---------- */
 
 #hint {

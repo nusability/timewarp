@@ -4,7 +4,7 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from './vendor/controls/OrbitControls.js';
-import { formatYear, niceStep } from './time.js';
+import { formatYear } from './time.js';
 
 const BG = '#0b0e14';
 
@@ -14,12 +14,16 @@ export class SpiralView {
     this.onPick = onPick || (() => {});
     this.onHover = onHover || (() => {});
 
-    // Geometry parameters of the spiral.
-    this.turns = 8;
+    // Geometry parameters of the spiral. The spiral is calendar-aligned:
+    // one turn = one period (a power of ten years, auto-chosen from the
+    // domain), so period boundaries always sit at the same angle.
+    this.turns = 10;
+    this.period = 10;  // years per turn
     this.R0 = 46;      // base radius
     this.Rg = 26;      // radius growth over the full domain (slightly conical)
     this.H = 110;      // total height
     this.bandW = 16;   // band width
+    this.maxTurns = 18;
 
     this.domain = { t0: 1900, t1: 2000 };
     this.pickables = [];
@@ -65,10 +69,12 @@ export class SpiralView {
   // ---- spiral math -------------------------------------------------------
 
   // Map (time, across-band offset u) -> world position. u in [-bandW/2, bandW/2].
+  // t0 is snapped to a period boundary, so every multiple of the period lands
+  // at angle 0 — the "top" of each turn.
   P(t, u = 0, lift = 0) {
     const { t0, t1 } = this.domain;
     const n = (t - t0) / (t1 - t0);
-    const theta = n * this.turns * Math.PI * 2;
+    const theta = ((t - t0) / this.period) * Math.PI * 2;
     const r = this.R0 + this.Rg * n + u;
     return new THREE.Vector3(r * Math.cos(theta), (n - 0.5) * this.H + lift, r * Math.sin(theta));
   }
@@ -85,6 +91,17 @@ export class SpiralView {
 
   setDomain(t0, t1) {
     if (!(t1 > t0)) t1 = t0 + 1;
+    // Period per turn: the smallest power of ten that keeps the turn count
+    // manageable — year, decade, century, millennium, … up to billions.
+    let period = 1;
+    while ((t1 - t0) / period > this.maxTurns && period < 1e10) period *= 10;
+    this.period = period;
+    // Snap the domain to period boundaries so turns start and end "at the top".
+    t0 = Math.floor(t0 / period) * period;
+    t1 = Math.ceil(t1 / period) * period;
+    if (t1 <= t0) t1 = t0 + period;
+    this.turns = (t1 - t0) / period;
+    this.H = Math.min(200, Math.max(56, this.turns * 14));
     this.domain = { t0, t1 };
     disposeGroup(this.staticG);
     this.staticG.add(this.makeBand(), ...this.makeTicks());
@@ -92,7 +109,9 @@ export class SpiralView {
 
   resetCamera() {
     const r = this.R0 + this.Rg + this.bandW;
-    this.camera.position.set(r * 1.7, this.H * 0.95, r * 1.7);
+    // Camera along angle 0, so the period boundary ("top" of each turn)
+    // faces the viewer.
+    this.camera.position.set(r * 2.1, this.H * 0.95, r * 0.55);
     this.controls.target.set(0, 0, 0);
     this.controls.update();
   }
@@ -143,11 +162,12 @@ export class SpiralView {
 
   makeTicks() {
     const { t0, t1 } = this.domain;
-    const step = niceStep(t1 - t0, 3.5 * this.turns);
     const w = this.bandW / 2;
     const objs = [];
-    const segs = [];
-    for (let y = Math.ceil(t0 / step) * step; y <= t1; y += step) {
+    const segs = [], minorSegs = [];
+    // Major ticks at every period boundary — they all share the same angle,
+    // stacking into a visible "12 o'clock" line up the spiral.
+    for (let y = t0; y <= t1; y += this.period) {
       const a = this.P(y, -w, 0.08), b = this.P(y, w, 0.08);
       segs.push(a.x, a.y, a.z, b.x, b.y, b.z);
       const label = this.makeTextSprite(formatYear(y), {
@@ -156,11 +176,28 @@ export class SpiralView {
       label.position.copy(this.P(y, w + 2.6, 0.4));
       objs.push(label);
     }
+    // With few turns, subdivide each turn into tenths so the eye can still
+    // read positions within a period.
+    if (this.turns <= 6) {
+      const sub = this.period / 10;
+      for (let y = t0 + sub; y < t1; y += sub) {
+        if (Math.abs(y / this.period - Math.round(y / this.period)) < 1e-9) continue;
+        const a = this.P(y, w * 0.55, 0.06), b = this.P(y, w, 0.06);
+        minorSegs.push(a.x, a.y, a.z, b.x, b.y, b.z);
+      }
+    }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3));
     objs.push(new THREE.LineSegments(g, new THREE.LineBasicMaterial({
-      color: 0xffffff, transparent: true, opacity: 0.3,
+      color: 0xffffff, transparent: true, opacity: 0.4,
     })));
+    if (minorSegs.length) {
+      const mg = new THREE.BufferGeometry();
+      mg.setAttribute('position', new THREE.Float32BufferAttribute(minorSegs, 3));
+      objs.push(new THREE.LineSegments(mg, new THREE.LineBasicMaterial({
+        color: 0xffffff, transparent: true, opacity: 0.15,
+      })));
+    }
     return objs;
   }
 
@@ -367,7 +404,8 @@ export class SpiralView {
     this.controls.autoRotate = false;
     const target = this.P(this.clampT(t), u, 0);
     const offset = this.camera.position.clone().sub(this.controls.target);
-    if (offset.length() > 180) offset.setLength(180);
+    const cap = (this.R0 + this.Rg + this.bandW) * 2.4;
+    if (offset.length() > cap) offset.setLength(cap);
     this.controls.target.copy(target);
     this.camera.position.copy(target.clone().add(offset));
   }
