@@ -132,8 +132,9 @@ export class SpiralView {
       const n = i / steps;
       const a = this.P(t, -w), b = this.P(t, w);
       pos.push(a.x, a.y, a.z, b.x, b.y, b.z);
-      // Colorful: a full slow sweep around the hue wheel along the timeline.
-      c.setHSL((0.62 + n * 0.9) % 1, 0.65, 0.52);
+      // Colorful but muted: a slow sweep around the hue wheel, desaturated so
+      // topic highlights always stand out against the band.
+      c.setHSL((0.62 + n * 0.9) % 1, 0.42, 0.46);
       col.push(c.r, c.g, c.b, c.r, c.g, c.b);
       if (i < steps) {
         const k = i * 2;
@@ -145,7 +146,7 @@ export class SpiralView {
     g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
     g.setIndex(idx);
     const m = new THREE.MeshBasicMaterial({
-      vertexColors: true, side: THREE.DoubleSide, transparent: true, opacity: 0.32,
+      vertexColors: true, side: THREE.DoubleSide, transparent: true, opacity: 0.28,
       depthWrite: false,
     });
     const band = new THREE.Mesh(g, m);
@@ -272,18 +273,38 @@ export class SpiralView {
       const color = new THREE.Color(topic.color);
 
       // The topic's own span is the ONLY bold ribbon — "the war years in
-      // pink". Every other range renders as a thin thread so long-lived
-      // linked entities can't flood the spiral with color.
+      // pink" — framed by start/end walls across the full band with their
+      // exact dates, so every event reads as before / during / after.
       const se = topic.selfEvent;
       if (se && se.ta != null && this.inDomain(se.ta, se.open ? this.domain.t1 : (se.tb ?? se.ta))) {
         const tb = se.open ? this.domain.t1 : (se.tb ?? se.ta);
-        this.dataG.add(this.makeStrip(se.ta, tb, uc - laneW * 0.40, uc + laneW * 0.40, color, 0.5, 0.12));
+        this.dataG.add(this.makeStrip(se.ta, tb, uc - laneW * 0.44, uc + laneW * 0.44, color, 0.7, 0.12));
+        for (const edge of [-0.44, 0.44]) {
+          this.dataG.add(this.makeArc(se.ta, tb, uc + laneW * edge, 0xffffff, 0.65, 0.16));
+        }
+        const dates = (se.whenText || '').split(' – ');
+        const wallW = (this.domain.t1 - this.domain.t0) * 0.0012;
+        const walls = [[se.ta, dates[0]]];
+        if (!se.open) walls.push([tb, dates[1]]);
+        for (const [t, dateText] of walls) {
+          this.dataG.add(this.makeStrip(t - wallW, t + wallW, -this.bandW / 2, this.bandW / 2, color, 0.95, 0.3));
+          if (dateText && dateText !== 'today') {
+            const lbl = this.makeTextSprite(dateText, {
+              font: '600 24px system-ui, sans-serif', color: '#ffffff', pill: true,
+              border: topic.color, height: 2.1, maxChars: 20,
+            });
+            lbl.position.copy(this.P(t, -this.bandW / 2 - 3.2, 0.9));
+            this.dataG.add(lbl);
+          }
+        }
       }
 
       for (const ev of topic.events) {
         const tMark = ev.kind === 'point' ? ev.tp : ev.ta ?? ev.tb;
         const jitter = (hash01(ev.qid) - 0.5) * laneW * 0.5;
-        if (!ev.isSelf && ev.kind !== 'point' && ev.ta != null) {
+        // Range threads only for major events — hundreds of minor ranges
+        // otherwise smear the whole band with lines.
+        if (!ev.isSelf && ev.kind !== 'point' && ev.ta != null && ev.tier <= 1) {
           const tb = ev.open ? this.domain.t1 : (ev.tb ?? ev.ta);
           if (this.inDomain(ev.ta, tb)) {
             this.dataG.add(this.makeArc(
