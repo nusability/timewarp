@@ -43,11 +43,10 @@ export class SpiralView {
     this.controls.dampingFactor = 0.08;
     this.controls.minDistance = 15;
     this.controls.maxDistance = 900;
-    // The spiral never rolls around its axis: the camera azimuth is locked so
-    // the period boundary (Jan 1) stays fixed at the top of the screen.
-    // Users can still tilt, zoom and pan.
-    this.controls.minAzimuthAngle = 0;
-    this.controls.maxAzimuthAngle = 0;
+    // The spiral itself never rotates (no auto-spin); it sits fixed in space
+    // with the period boundary anchored at its "north". The camera is free —
+    // orbit, tilt, zoom, pan — and the ⌂ reset returns to the canonical
+    // boundary-at-top view.
     this.controls.minPolarAngle = 0.1;
     this.controls.maxPolarAngle = 1.45;
 
