@@ -50,6 +50,10 @@ export class SpiralView {
     this.controls.maxAzimuthAngle = 0;
     this.controls.minPolarAngle = 0.1;
     this.controls.maxPolarAngle = 1.45;
+    // Touch: with rotation clamped, one finger is free to pan; perspective
+    // (tilt + pinch zoom) moves to two fingers. Two-finger drags may go any
+    // direction — the azimuth lock guarantees Jan 1 stays at the top.
+    this.controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
 
     this.staticG = new THREE.Group();  // band, ticks, stars — rebuilt on domain change
     this.dataG = new THREE.Group();    // topics — rebuilt on data/filter change

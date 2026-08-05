@@ -366,7 +366,7 @@ $('#filtersToggle').addEventListener('click', () => {
 
 // Touch devices get touch wording in the hint bar.
 if (navigator.maxTouchPoints > 0) {
-  $('#hint').firstChild.textContent = 'Drag to tilt · Pinch to zoom · Two-finger drag to pan · Data: ';
+  $('#hint').firstChild.textContent = 'One finger to move · Two fingers to tilt & zoom · Data: ';
 }
 
 $('#density').addEventListener('change', (e) => {
