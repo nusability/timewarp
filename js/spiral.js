@@ -43,9 +43,13 @@ export class SpiralView {
     this.controls.dampingFactor = 0.08;
     this.controls.minDistance = 15;
     this.controls.maxDistance = 900;
-    this.controls.autoRotate = true;
-    this.controls.autoRotateSpeed = 0.5;
-    this.controls.addEventListener('start', () => { this.controls.autoRotate = false; });
+    // The spiral never rolls around its axis: the camera azimuth is locked so
+    // the period boundary (Jan 1) stays fixed at the top of the screen.
+    // Users can still tilt, zoom and pan.
+    this.controls.minAzimuthAngle = 0;
+    this.controls.maxAzimuthAngle = 0;
+    this.controls.minPolarAngle = 0.1;
+    this.controls.maxPolarAngle = 1.45;
 
     this.staticG = new THREE.Group();  // band, ticks, stars — rebuilt on domain change
     this.dataG = new THREE.Group();    // topics — rebuilt on data/filter change
@@ -70,11 +74,12 @@ export class SpiralView {
 
   // Map (time, across-band offset u) -> world position. u in [-bandW/2, bandW/2].
   // t0 is snapped to a period boundary, so every multiple of the period lands
-  // at angle 0 — the "top" of each turn.
+  // at the boundary angle: -Z, the far side of the coil from the locked
+  // camera, which projects to the top of the screen.
   P(t, u = 0, lift = 0) {
     const { t0, t1 } = this.domain;
     const n = (t - t0) / (t1 - t0);
-    const theta = ((t - t0) / this.period) * Math.PI * 2;
+    const theta = -Math.PI / 2 + ((t - t0) / this.period) * Math.PI * 2;
     const r = this.R0 + this.Rg * n + u;
     return new THREE.Vector3(r * Math.cos(theta), (n - 0.5) * this.H + lift, r * Math.sin(theta));
   }
@@ -109,10 +114,9 @@ export class SpiralView {
 
   resetCamera() {
     const r = this.R0 + this.Rg + this.bandW;
-    // Camera along angle 0, so the period boundary ("top" of each turn)
-    // faces the viewer. Side-on enough that tall spirals read as a tower
-    // rather than looking down the funnel.
-    this.camera.position.set(r * 2.5, this.H * 0.55, r * 0.7);
+    // Camera on the locked azimuth (+Z), elevated: the boundary at -Z is the
+    // far side of every coil, i.e. the top of the screen.
+    this.camera.position.set(0, this.H * 0.75, r * 2.4);
     this.controls.target.set(0, 0, 0);
     this.controls.update();
   }
@@ -402,7 +406,6 @@ export class SpiralView {
   }
 
   focusTime(t, u = 0) {
-    this.controls.autoRotate = false;
     const target = this.P(this.clampT(t), u, 0);
     const offset = this.camera.position.clone().sub(this.controls.target);
     const cap = (this.R0 + this.Rg + this.bandW) * 2.4;
