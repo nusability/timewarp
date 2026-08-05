@@ -1,6 +1,14 @@
 // The 3D spiral timeline view. Owns the Three.js scene: a helical band
 // ("floating through space"), per-topic lanes with range strips and event
 // markers, year ticks, picking and hover.
+//
+// Navigation contract: the user zooms into a ring and pans along it to
+// follow a period. Pan speed adapts to zoom (up to 5x) so traversing a ring
+// takes similar finger travel at any zoom, and zooming in bends the spiral
+// into a "space banana": the front of the coils fans apart for headroom
+// while the rear (the Jan 1 boundary) stays tight. Every drawable stores a
+// reproject closure so the bend can re-shape geometry live without
+// rebuilding any textures.
 
 import * as THREE from 'three';
 import { OrbitControls } from './vendor/controls/OrbitControls.js';
@@ -24,6 +32,7 @@ export class SpiralView {
     this.H = 110;      // total height
     this.bandW = 16;   // band width
     this.maxTurns = 24;
+    this.bend = 0;     // current banana amount (extra front pitch, world units)
 
     this.domain = { t0: 1900, t1: 2000 };
     this.pickables = [];
@@ -55,7 +64,7 @@ export class SpiralView {
     // direction — the azimuth lock guarantees Jan 1 stays at the top.
     this.controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
 
-    this.staticG = new THREE.Group();  // band, ticks, stars — rebuilt on domain change
+    this.staticG = new THREE.Group();  // band, ticks — rebuilt on domain change
     this.dataG = new THREE.Group();    // topics — rebuilt on data/filter change
     this.scene.add(this.staticG, this.dataG);
     this.scene.add(this.makeStarfield());
@@ -78,14 +87,18 @@ export class SpiralView {
 
   // Map (time, across-band offset u) -> world position. u in [-bandW/2, bandW/2].
   // t0 is snapped to a period boundary, so every multiple of the period lands
-  // at the boundary angle: -Z, the far side of the coil from the locked
+  // at the boundary angle: -Z, the far side of the coil from the default
   // camera, which projects to the top of the screen.
+  // The banana: vertical pitch grows with "frontness" (sin theta = +1 at the
+  // front, -1 at the rear boundary), scaled by the current bend.
   P(t, u = 0, lift = 0) {
     const { t0, t1 } = this.domain;
     const n = (t - t0) / (t1 - t0);
     const theta = -Math.PI / 2 + ((t - t0) / this.period) * Math.PI * 2;
     const r = this.R0 + this.Rg * n + u;
-    return new THREE.Vector3(r * Math.cos(theta), (n - 0.5) * this.H + lift, r * Math.sin(theta));
+    const frontness = (1 + Math.sin(theta)) / 2;
+    const y = (n - 0.5) * (this.H + this.bend * frontness) + lift;
+    return new THREE.Vector3(r * Math.cos(theta), y, r * Math.sin(theta));
   }
 
   clampT(t) {
@@ -94,6 +107,13 @@ export class SpiralView {
 
   inDomain(a, b = a) {
     return b >= this.domain.t0 && a <= this.domain.t1;
+  }
+
+  // Re-run every drawable's position closure (after a bend change).
+  reproject() {
+    for (const root of [this.staticG, this.dataG]) {
+      root.traverse((o) => { o.userData.reproject?.(); });
+    }
   }
 
   // ---- scene building ----------------------------------------------------
@@ -129,13 +149,10 @@ export class SpiralView {
     const { t0, t1 } = this.domain;
     const steps = Math.max(64, Math.round(this.turns * 150));
     const w = this.bandW / 2;
-    const pos = [], col = [], idx = [];
+    const col = [], idx = [];
     const c = new THREE.Color();
     for (let i = 0; i <= steps; i++) {
-      const t = t0 + (i / steps) * (t1 - t0);
       const n = i / steps;
-      const a = this.P(t, -w), b = this.P(t, w);
-      pos.push(a.x, a.y, a.z, b.x, b.y, b.z);
       // Colorful but muted: a slow sweep around the hue wheel, desaturated so
       // topic highlights always stand out against the band.
       c.setHSL((0.62 + n * 0.9) % 1, 0.42, 0.46);
@@ -146,7 +163,7 @@ export class SpiralView {
       }
     }
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array((steps + 1) * 6), 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
     g.setIndex(idx);
     const m = new THREE.MeshBasicMaterial({
@@ -154,19 +171,40 @@ export class SpiralView {
       depthWrite: false,
     });
     const band = new THREE.Mesh(g, m);
+    band.frustumCulled = false;
 
     // Brighter edge rails give the band definition.
+    const edges = [];
     for (const u of [-w, w]) {
-      const pts = [];
-      for (let i = 0; i <= steps; i++) {
-        pts.push(this.P(t0 + (i / steps) * (t1 - t0), u, 0.05));
-      }
-      const lg = new THREE.BufferGeometry().setFromPoints(pts);
+      const lg = new THREE.BufferGeometry();
+      lg.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array((steps + 1) * 3), 3));
       const line = new THREE.Line(lg, new THREE.LineBasicMaterial({
         color: 0xffffff, transparent: true, opacity: 0.22,
       }));
+      line.frustumCulled = false;
       band.add(line);
+      edges.push({ line, u });
     }
+
+    band.userData.reproject = () => {
+      const pos = g.attributes.position;
+      for (let i = 0; i <= steps; i++) {
+        const t = t0 + (i / steps) * (t1 - t0);
+        const a = this.P(t, -w), b = this.P(t, w);
+        pos.setXYZ(i * 2, a.x, a.y, a.z);
+        pos.setXYZ(i * 2 + 1, b.x, b.y, b.z);
+      }
+      pos.needsUpdate = true;
+      for (const { line, u } of edges) {
+        const p = line.geometry.attributes.position;
+        for (let i = 0; i <= steps; i++) {
+          const v = this.P(t0 + (i / steps) * (t1 - t0), u, 0.05);
+          p.setXYZ(i, v.x, v.y, v.z);
+        }
+        p.needsUpdate = true;
+      }
+    };
+    band.userData.reproject();
     return band;
   }
 
@@ -174,41 +212,52 @@ export class SpiralView {
     const { t0, t1 } = this.domain;
     const w = this.bandW / 2;
     const objs = [];
-    const segs = [], minorSegs = [];
     // Major ticks at every period boundary — they all share the same angle,
     // stacking into a visible "12 o'clock" line up the spiral.
-    for (let y = t0; y <= t1; y += this.period) {
-      const a = this.P(y, -w, 0.08), b = this.P(y, w, 0.08);
-      segs.push(a.x, a.y, a.z, b.x, b.y, b.z);
+    const majors = [];
+    for (let y = t0; y <= t1; y += this.period) majors.push(y);
+    for (const y of majors) {
       const label = this.makeTextSprite(formatYear(y), {
         font: '600 30px system-ui, sans-serif', color: '#8fa3c4', pill: false, height: 2.6,
       });
-      label.position.copy(this.P(y, w + 2.6, 0.4));
+      label.userData.reproject = () => label.position.copy(this.P(y, w + 2.6, 0.4));
+      label.userData.reproject();
       objs.push(label);
     }
+    objs.push(this.makeCrossSegments(majors, -w, w, 0.08, 0.4));
     // With few turns, subdivide each turn into tenths so the eye can still
     // read positions within a period.
     if (this.turns <= 6) {
+      const minors = [];
       const sub = this.period / 10;
       for (let y = t0 + sub; y < t1; y += sub) {
         if (Math.abs(y / this.period - Math.round(y / this.period)) < 1e-9) continue;
-        const a = this.P(y, w * 0.55, 0.06), b = this.P(y, w, 0.06);
-        minorSegs.push(a.x, a.y, a.z, b.x, b.y, b.z);
+        minors.push(y);
       }
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3));
-    objs.push(new THREE.LineSegments(g, new THREE.LineBasicMaterial({
-      color: 0xffffff, transparent: true, opacity: 0.4,
-    })));
-    if (minorSegs.length) {
-      const mg = new THREE.BufferGeometry();
-      mg.setAttribute('position', new THREE.Float32BufferAttribute(minorSegs, 3));
-      objs.push(new THREE.LineSegments(mg, new THREE.LineBasicMaterial({
-        color: 0xffffff, transparent: true, opacity: 0.15,
-      })));
+      if (minors.length) objs.push(this.makeCrossSegments(minors, w * 0.55, w, 0.06, 0.15));
     }
     return objs;
+  }
+
+  // Cross-band tick lines at the given years, as one LineSegments object.
+  makeCrossSegments(years, u0, u1, lift, opacity) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(years.length * 6), 3));
+    const seg = new THREE.LineSegments(g, new THREE.LineBasicMaterial({
+      color: 0xffffff, transparent: true, opacity,
+    }));
+    seg.frustumCulled = false;
+    seg.userData.reproject = () => {
+      const pos = g.attributes.position;
+      years.forEach((y, i) => {
+        const a = this.P(y, u0, lift), b = this.P(y, u1, lift);
+        pos.setXYZ(i * 2, a.x, a.y, a.z);
+        pos.setXYZ(i * 2 + 1, b.x, b.y, b.z);
+      });
+      pos.needsUpdate = true;
+    };
+    seg.userData.reproject();
+    return seg;
   }
 
   makeStarfield() {
@@ -226,42 +275,75 @@ export class SpiralView {
     }));
   }
 
-  // A ribbon strip along the band between times ta..tb at lane offsets u0..u1.
-  makeStrip(ta, tb, u0, u1, color, opacity, lift) {
+  stripSteps(ta, tb) {
+    const span = (tb - ta) / (this.domain.t1 - this.domain.t0);
+    return Math.max(6, Math.ceil(span * this.turns * 110));
+  }
+
+  clampRange(ta, tb) {
     ta = this.clampT(ta); tb = this.clampT(tb);
     if (!(tb > ta)) tb = Math.min(this.domain.t1, ta + (this.domain.t1 - this.domain.t0) * 0.002);
-    const span = (tb - ta) / (this.domain.t1 - this.domain.t0);
-    const steps = Math.max(6, Math.ceil(span * this.turns * 110));
-    const pos = [], idx = [];
-    for (let i = 0; i <= steps; i++) {
-      const t = ta + (i / steps) * (tb - ta);
-      const a = this.P(t, u0, lift), b = this.P(t, u1, lift);
-      pos.push(a.x, a.y, a.z, b.x, b.y, b.z);
-      if (i < steps) {
-        const k = i * 2;
-        idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2);
-      }
+    return [ta, tb];
+  }
+
+  // A ribbon strip along the band between times ta..tb at lane offsets u0..u1.
+  makeStrip(ta, tb, u0, u1, color, opacity, lift) {
+    [ta, tb] = this.clampRange(ta, tb);
+    const steps = this.stripSteps(ta, tb);
+    const idx = [];
+    for (let i = 0; i < steps; i++) {
+      const k = i * 2;
+      idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2);
     }
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array((steps + 1) * 6), 3));
     g.setIndex(idx);
-    return new THREE.Mesh(g, new THREE.MeshBasicMaterial({
+    const mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({
       color, side: THREE.DoubleSide, transparent: true, opacity, depthWrite: false,
     }));
+    mesh.frustumCulled = false;
+    mesh.userData.reproject = () => {
+      const pos = g.attributes.position;
+      for (let i = 0; i <= steps; i++) {
+        const t = ta + (i / steps) * (tb - ta);
+        const a = this.P(t, u0, lift), b = this.P(t, u1, lift);
+        pos.setXYZ(i * 2, a.x, a.y, a.z);
+        pos.setXYZ(i * 2 + 1, b.x, b.y, b.z);
+      }
+      pos.needsUpdate = true;
+    };
+    mesh.userData.reproject();
+    return mesh;
   }
 
   // A thin arc line along the band at offset u — the subtle form of a range.
   makeArc(ta, tb, u, color, opacity, lift) {
-    ta = this.clampT(ta); tb = this.clampT(tb);
-    if (!(tb > ta)) tb = Math.min(this.domain.t1, ta + (this.domain.t1 - this.domain.t0) * 0.002);
-    const span = (tb - ta) / (this.domain.t1 - this.domain.t0);
-    const steps = Math.max(6, Math.ceil(span * this.turns * 110));
-    const pts = [];
-    for (let i = 0; i <= steps; i++) {
-      pts.push(this.P(ta + (i / steps) * (tb - ta), u, lift));
-    }
-    const g = new THREE.BufferGeometry().setFromPoints(pts);
-    return new THREE.Line(g, new THREE.LineBasicMaterial({ color, transparent: true, opacity }));
+    [ta, tb] = this.clampRange(ta, tb);
+    const steps = this.stripSteps(ta, tb);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array((steps + 1) * 3), 3));
+    const line = new THREE.Line(g, new THREE.LineBasicMaterial({ color, transparent: true, opacity }));
+    line.frustumCulled = false;
+    line.userData.reproject = () => {
+      const pos = g.attributes.position;
+      for (let i = 0; i <= steps; i++) {
+        const v = this.P(ta + (i / steps) * (tb - ta), u, lift);
+        pos.setXYZ(i, v.x, v.y, v.z);
+      }
+      pos.needsUpdate = true;
+    };
+    line.userData.reproject();
+    return line;
+  }
+
+  // Pin a sprite to a (time, offset, lift) spot on the spiral, with an
+  // optional extra screen-up offset. Keeps it in place through reprojects.
+  pinSprite(sprite, t, u, lift, dy = 0) {
+    sprite.userData.reproject = () => {
+      sprite.position.copy(this.P(t, u, lift));
+      sprite.position.y += dy;
+    };
+    sprite.userData.reproject();
   }
 
   // topics: [{ id, title, color, laneIndex, laneCount, selfEvent, events }]
@@ -297,7 +379,7 @@ export class SpiralView {
               font: '600 24px system-ui, sans-serif', color: '#ffffff', pill: true,
               border: topic.color, height: 2.1, maxChars: 20,
             });
-            lbl.position.copy(this.P(t, -this.bandW / 2 - 3.2, 0.9));
+            this.pinSprite(lbl, t, -this.bandW / 2 - 3.2, 0.9);
             this.dataG.add(lbl);
           }
         }
@@ -320,8 +402,9 @@ export class SpiralView {
         if (tMark == null || !this.inDomain(tMark)) continue;
 
         const marker = this.makeMarker(ev, topic);
-        marker.position.copy(this.P(tMark, uc + jitter, 1.1));
-        marker.userData = { ev, topic };
+        this.pinSprite(marker, tMark, uc + jitter, 1.1);
+        marker.userData.ev = ev;
+        marker.userData.topic = topic;
         this.dataG.add(marker);
         this.pickables.push(marker);
 
@@ -335,11 +418,11 @@ export class SpiralView {
           height: ev.isSelf ? 3.4 : minor ? 1.8 : 2.5,
           maxChars: minor ? 24 : 34,
         });
-        label.position.copy(marker.position);
-        label.position.y += ev.isSelf ? 6 : ev.tier === 0 ? 4.6 : 2.1;
+        this.pinSprite(label, tMark, uc + jitter, 1.1, ev.isSelf ? 6 : ev.tier === 0 ? 4.6 : 2.1);
         // Labels are pickable too — a marker can be occluded by a nearer
         // coil while its always-on-top label remains visible.
-        label.userData = { ev, topic };
+        label.userData.ev = ev;
+        label.userData.topic = topic;
         this.pickables.push(label);
         this.dataG.add(label);
       }
@@ -473,6 +556,19 @@ export class SpiralView {
   }
 
   tick() {
+    const dist = this.camera.position.distanceTo(this.controls.target);
+    // Constant-feel panning: OrbitControls pans proportionally to the target
+    // distance, which crawls when zoomed in. Boost up to 5x so traversing a
+    // ring takes similar finger travel at any zoom.
+    this.controls.panSpeed = Math.min(5, Math.max(1, 260 / dist));
+    // The space banana: fan the front of the coils apart as the camera gets
+    // close, so a zoomed-in ring has headroom instead of overlapping its
+    // neighbors. The rear (Jan 1 line) stays tight.
+    const bendTarget = this.H * 1.1 * Math.min(1, Math.max(0, (240 - dist) / 170));
+    if (Math.abs(bendTarget - this.bend) > 0.05) {
+      this.bend += (bendTarget - this.bend) * 0.12;
+      this.reproject();
+    }
     if (this.moveEvent) {
       this.setHover(this.raycastEvent(this.moveEvent), this.moveEvent);
       this.moveEvent = null;
